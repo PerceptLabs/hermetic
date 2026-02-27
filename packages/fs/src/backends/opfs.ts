@@ -27,62 +27,22 @@ export class OPFSFS implements HermeticFS {
   static async create(): Promise<OPFSFS> {
     const blob = new Blob([OPFS_WORKER_SOURCE], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
-    const worker = new Worker(url, { type: "module" });
+    const worker = new Worker(url);
     URL.revokeObjectURL(url);
 
+    // Create MessageChannel — port1 stays on main thread, port2 goes to Worker
     const { port1, port2 } = new MessageChannel();
-    worker.postMessage({ __hermetic: true, ns: "init", port: port2 }, [port2]);
+    worker.postMessage(
+      { __hermetic: true, ns: "init" },
+      [port2], // Transfer port2 to worker
+    );
 
-    // The worker uses self.onmessage directly, so we use the worker's
-    // built-in port. We create a HermeticChannel on port1 and send
-    // messages through the worker's postMessage.
-    // Actually, the worker listens on self.onmessage, so we wrap the worker itself.
     const channel = new HermeticChannel(port1);
-
-    // For OPFS, we post directly to the worker (not via MessageChannel port)
-    // since the worker uses self.onmessage. Let's use a shim approach:
-    // We'll create a wrapper that posts to worker and receives on worker.
     return new OPFSFS(worker, channel);
   }
 
-  private async rpc(method: string, ...args: unknown[]): Promise<unknown> {
-    // Direct worker RPC (not via HermeticChannel since worker uses self.onmessage)
-    const id = crypto.randomUUID();
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`OPFS RPC timeout: fs.${method}`));
-      }, 30_000);
-
-      const handler = (event: MessageEvent) => {
-        const msg = event.data;
-        if (!msg?.__hermetic || msg.id !== id) return;
-        this.worker.removeEventListener("message", handler);
-        clearTimeout(timeout);
-        if (msg.ok) {
-          resolve(msg.value);
-        } else {
-          const err = new Error(msg.error.message) as Error & { code?: string; path?: string };
-          err.name = msg.error.name;
-          err.code = msg.error.code;
-          err.path = msg.error.path;
-          reject(err);
-        }
-      };
-
-      this.worker.addEventListener("message", handler);
-      const transfer: Transferable[] = [];
-      for (const arg of args) {
-        if (arg instanceof ArrayBuffer) transfer.push(arg);
-      }
-      this.worker.postMessage(
-        { __hermetic: true, ns: "fs", id, method, args },
-        transfer,
-      );
-    });
-  }
-
   async readFile(path: string, encoding?: "utf-8"): Promise<Uint8Array | string> {
-    const buffer = (await this.rpc("readFile", path)) as ArrayBuffer;
+    const buffer = (await this.channel.call("fs", "readFile", [path])) as ArrayBuffer;
     if (encoding === "utf-8") return new TextDecoder().decode(buffer);
     return new Uint8Array(buffer);
   }
@@ -91,24 +51,25 @@ export class OPFSFS implements HermeticFS {
     const buffer = typeof data === "string"
       ? new TextEncoder().encode(data).buffer
       : data.buffer instanceof ArrayBuffer ? data.buffer : new Uint8Array(data).buffer;
-    await this.rpc("writeFile", path, buffer, options);
+    const transfer = [buffer];
+    await this.channel.call("fs", "writeFile", [path, buffer, options], transfer);
     this.emitWatch("modify", path);
   }
 
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
-    await this.rpc("mkdir", path, options);
+    await this.channel.call("fs", "mkdir", [path, options]);
   }
 
   async readdir(path: string): Promise<string[]> {
-    return (await this.rpc("readdir", path)) as string[];
+    return (await this.channel.call("fs", "readdir", [path])) as string[];
   }
 
   async rmdir(path: string, options?: RmdirOptions): Promise<void> {
-    await this.rpc("rmdir", path, options);
+    await this.channel.call("fs", "rmdir", [path, options]);
   }
 
   async stat(path: string): Promise<FileStat> {
-    const raw = (await this.rpc("stat", path)) as {
+    const raw = (await this.channel.call("fs", "stat", [path])) as {
       type: "file" | "directory";
       size: number;
       mode: number;
@@ -148,20 +109,20 @@ export class OPFSFS implements HermeticFS {
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
-    await this.rpc("rename", oldPath, newPath);
+    await this.channel.call("fs", "rename", [oldPath, newPath]);
   }
 
   async unlink(path: string): Promise<void> {
-    await this.rpc("unlink", path);
+    await this.channel.call("fs", "unlink", [path]);
     this.emitWatch("delete", path);
   }
 
   async copyFile(src: string, dest: string): Promise<void> {
-    await this.rpc("copyFile", src, dest);
+    await this.channel.call("fs", "copyFile", [src, dest]);
   }
 
   async exists(path: string): Promise<boolean> {
-    return (await this.rpc("exists", path)) as boolean;
+    return (await this.channel.call("fs", "exists", [path])) as boolean;
   }
 
   // === File watching (polling fallback) ===

@@ -7,6 +7,8 @@
 // using createSyncAccessHandle() for synchronous I/O within the Worker.
 
 let opfsRoot: FileSystemDirectoryHandle;
+let port: MessagePort;
+let supportsReadOnlyMode = true; // optimistic — set false on TypeError
 
 async function init(): Promise<void> {
   opfsRoot = await navigator.storage.getDirectory();
@@ -57,11 +59,28 @@ async function ensureDir(path: string): Promise<FileSystemDirectoryHandle> {
   return dir;
 }
 
+// === Read-only access handle support ===
+
+async function openReadOnly(fileHandle: FileSystemFileHandle): Promise<FileSystemSyncAccessHandle> {
+  if (supportsReadOnlyMode) {
+    try {
+      return await (fileHandle as any).createSyncAccessHandle({ mode: "read-only" });
+    } catch (e) {
+      if (e instanceof TypeError) {
+        supportsReadOnlyMode = false;
+      } else {
+        throw e;
+      }
+    }
+  }
+  return await fileHandle.createSyncAccessHandle();
+}
+
 // === FS Operations ===
 
 async function readFile(path: string): Promise<ArrayBuffer> {
   const fileHandle = await navigateToFile(path);
-  const accessHandle = await fileHandle.createSyncAccessHandle();
+  const accessHandle = await openReadOnly(fileHandle);
   try {
     const size = accessHandle.getSize();
     const buffer = new ArrayBuffer(size);
@@ -144,7 +163,7 @@ async function stat(path: string): Promise<{
   // Try as file first
   try {
     const fileHandle = await parentDir.getFileHandle(name);
-    const accessHandle = await fileHandle.createSyncAccessHandle();
+    const accessHandle = await openReadOnly(fileHandle);
     try {
       const size = accessHandle.getSize();
       const now = new Date().toISOString();
@@ -242,12 +261,21 @@ function mapFSError(err: unknown, syscall: string, path?: string): {
   return { name: "Error", message: String(err) };
 }
 
-// === Message handler ===
+// === Port-based message handler ===
 
-self.onmessage = async (event: MessageEvent) => {
+// First message from main thread transfers the communication port
+self.onmessage = (event: MessageEvent) => {
+  if (event.data?.__hermetic && event.data.ns === "init" && event.ports.length > 0) {
+    port = event.ports[0];
+    port.onmessage = handleRequest;
+    port.start();
+    return;
+  }
+};
+
+async function handleRequest(event: MessageEvent) {
   const msg = event.data;
   if (!msg?.__hermetic || msg.ns !== "fs") return;
-
   if (!opfsRoot) await init();
 
   try {
@@ -307,12 +335,12 @@ self.onmessage = async (event: MessageEvent) => {
         throw new Error(`Unknown FS method: ${msg.method}`);
     }
 
-    (self as any).postMessage(
+    port.postMessage(
       { __hermetic: true, ns: "fs", id: msg.id, ok: true, value: result },
       transfer,
     );
   } catch (err: unknown) {
-    (self as any).postMessage({
+    port.postMessage({
       __hermetic: true,
       ns: "fs",
       id: msg.id,
@@ -320,4 +348,4 @@ self.onmessage = async (event: MessageEvent) => {
       error: mapFSError(err, msg.method, msg.args?.[0]),
     });
   }
-};
+}
