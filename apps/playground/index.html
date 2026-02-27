@@ -4,9 +4,45 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hermetic Playground</title>
+  <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <header id="toolbar">
+      <h1>Hermetic Playground</h1>
+      <div id="toolbar-actions">
+        <button id="btn-run" title="Run code">Run</button>
+        <button id="btn-clear" title="Clear terminal">Clear</button>
+      </div>
+    </header>
+    <main id="workspace">
+      <aside id="file-tree">
+        <div class="panel-header">Files</div>
+        <div id="file-list"></div>
+      </aside>
+      <section id="editor-panel">
+        <div class="panel-header">
+          <span id="editor-filename">/index.js</span>
+          <button id="btn-save" title="Save file">Save</button>
+        </div>
+        <textarea id="editor" spellcheck="false"></textarea>
+      </section>
+      <section id="right-panel">
+        <div id="terminal-panel">
+          <div class="panel-header">Terminal</div>
+          <div id="terminal-output"></div>
+          <div id="terminal-input-row">
+            <span id="terminal-prompt">$ </span>
+            <input id="terminal-input" type="text" autofocus />
+          </div>
+        </div>
+        <div id="preview-panel">
+          <div class="panel-header">Preview</div>
+          <div id="preview-container"></div>
+        </div>
+      </section>
+    </main>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

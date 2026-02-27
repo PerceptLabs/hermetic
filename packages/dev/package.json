@@ -17,10 +17,13 @@
     "test": "vitest run",
     "test:browser": "vitest run --browser.name=chromium"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@hermetic/core": "workspace:*",
     "@hermetic/fs": "workspace:*",
     "@hermetic/net": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

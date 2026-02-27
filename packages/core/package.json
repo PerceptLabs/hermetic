@@ -17,5 +17,8 @@
     "test": "vitest run",
     "test:browser": "vitest run --browser.name=chromium"
   },
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ],
+  "license": "MIT"
 }

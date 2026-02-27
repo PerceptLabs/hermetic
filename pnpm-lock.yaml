@@ -30,7 +30,27 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@vitest/browser@2.1.9)(msw@2.12.10(typescript@5.9.3))
 
-  apps/playground: {}
+  apps/playground:
+    dependencies:
+      '@hermetic/dev':
+        specifier: workspace:*
+        version: link:../../packages/dev
+      '@hermetic/fs':
+        specifier: workspace:*
+        version: link:../../packages/fs
+      '@hermetic/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@hermetic/shell':
+        specifier: workspace:*
+        version: link:../../packages/shell
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21
 
   packages/core: {}
 

@@ -6,5 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build"
+  },
+  "dependencies": {
+    "@hermetic/runtime": "workspace:*",
+    "@hermetic/fs": "workspace:*",
+    "@hermetic/shell": "workspace:*",
+    "@hermetic/dev": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.9.0"
   }
 }
