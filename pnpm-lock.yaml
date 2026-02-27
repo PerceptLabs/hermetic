@@ -56,7 +56,11 @@ importers:
 
   packages/shell: {}
 
-  packages/vm: {}
+  packages/vm:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
