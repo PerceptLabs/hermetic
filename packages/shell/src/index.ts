@@ -16,4 +16,5 @@ export type {
 export { parse } from "./parser.js";
 export { builtins } from "./builtins.js";
 export { execute } from "./executor.js";
+export { expandGlob } from "./glob.js";
 export { HermeticShell, createShell } from "./shell.js";

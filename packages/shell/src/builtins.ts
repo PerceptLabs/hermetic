@@ -42,14 +42,23 @@ export const builtins: Record<string, BuiltinFn> = {
   },
 
   ls: async (args, ctx) => {
-    const target = args[0] ?? ctx.cwd;
-    const resolved = target.startsWith("/") ? normalizePath(target) : normalizePath(joinPath(ctx.cwd, target));
-    try {
-      const entries = await ctx.fs.readdir(resolved);
-      return { stdout: entries.join("\n") + (entries.length ? "\n" : ""), stderr: "", exitCode: 0 };
-    } catch {
-      return { stdout: "", stderr: `ls: cannot access '${target}': No such file or directory\n`, exitCode: 1 };
+    const targets = args.length > 0 ? args : [ctx.cwd];
+    const allEntries: string[] = [];
+    for (const target of targets) {
+      const resolved = resolvePath(ctx.cwd, target);
+      try {
+        const stat = await ctx.fs.stat(resolved);
+        if (stat.type === "directory") {
+          const entries = await ctx.fs.readdir(resolved);
+          allEntries.push(...entries);
+        } else {
+          allEntries.push(basename(resolved));
+        }
+      } catch {
+        return { stdout: allEntries.join("\n") + (allEntries.length ? "\n" : ""), stderr: `ls: cannot access '${target}': No such file or directory\n`, exitCode: 1 };
+      }
     }
+    return { stdout: allEntries.join("\n") + (allEntries.length ? "\n" : ""), stderr: "", exitCode: 0 };
   },
 
   cat: async (args, ctx) => {

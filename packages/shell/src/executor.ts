@@ -4,6 +4,7 @@ import { normalizePath, joinPath } from "@hermetic/core";
 import type { HermeticFS } from "@hermetic/fs";
 import type { ShellNode, CommandNode, PipelineNode, ListNode, ShellOutput } from "./types.js";
 import { builtins } from "./builtins.js";
+import { expandGlob } from "./glob.js";
 
 export interface ExecContext {
   fs: HermeticFS;
@@ -38,7 +39,23 @@ async function executeCommand(node: CommandNode, ctx: ExecContext): Promise<Shel
 
   // Expand variables in args
   const name = expandVariables(node.name, ctx.env);
-  const args = node.args.map((a) => expandVariables(a, ctx.env));
+  let args = node.args.map((a) => expandVariables(a, ctx.env));
+
+  // Expand globs
+  const expandedArgs: string[] = [];
+  for (const arg of args) {
+    if (/[*?]/.test(arg)) {
+      const matches = await expandGlob(arg, ctx.cwd, ctx.fs);
+      if (matches.length > 0) {
+        expandedArgs.push(...matches);
+      } else {
+        expandedArgs.push(arg); // No match — pass literal (bash behavior)
+      }
+    } else {
+      expandedArgs.push(arg);
+    }
+  }
+  args = expandedArgs;
 
   // Check builtins first
   if (name in builtins) {
