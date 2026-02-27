@@ -10,6 +10,7 @@ export interface ExecContext {
   cwd: string;
   env: Record<string, string>;
   setCwd: (path: string) => void;
+  stdin?: string; // Piped input from previous command
 }
 
 export async function execute(node: ShellNode, ctx: ExecContext): Promise<ShellOutput> {
@@ -54,30 +55,28 @@ async function executeCommand(node: CommandNode, ctx: ExecContext): Promise<Shel
 }
 
 async function executePipeline(node: PipelineNode, ctx: ExecContext): Promise<ShellOutput> {
-  let lastOutput: ShellOutput = { stdout: "", stderr: "", exitCode: 0 };
+  let stdin = "";
+  let lastResult: ShellOutput = { stdout: "", stderr: "", exitCode: 0 };
 
   for (let i = 0; i < node.commands.length; i++) {
     const cmd = node.commands[i];
-    const result = await execute(cmd, ctx);
 
-    if (i < node.commands.length - 1) {
-      // Pipe stdout to next command's stdin (simplified: pass as first arg)
-      // Real piping would use TransformStreams, but for builtins we pass text
-      const nextCmd = node.commands[i + 1];
-      if (nextCmd.type === "command" && result.stdout) {
-        // For grep/sort-like commands, pipe data via stdin simulation
-        // This is simplified — real implementation would use streams
-      }
-    }
+    // Create context with stdin from previous command
+    const pipeCtx: ExecContext = { ...ctx, stdin };
+    const result = await execute(cmd, pipeCtx);
 
-    lastOutput = {
-      stdout: lastOutput.stdout + result.stdout,
-      stderr: lastOutput.stderr + result.stderr,
+    // This command's stdout becomes next command's stdin
+    stdin = result.stdout;
+
+    // Accumulate stderr from all commands
+    lastResult = {
+      stdout: result.stdout,
+      stderr: lastResult.stderr + result.stderr,
       exitCode: result.exitCode,
     };
   }
 
-  return lastOutput;
+  return lastResult;
 }
 
 async function executeList(node: ListNode, ctx: ExecContext): Promise<ShellOutput> {

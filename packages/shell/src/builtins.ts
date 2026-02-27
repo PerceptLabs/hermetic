@@ -6,8 +6,12 @@ import type { ShellOutput } from "./types.js";
 
 type BuiltinFn = (
   args: string[],
-  ctx: { fs: HermeticFS; cwd: string; env: Record<string, string>; setCwd: (p: string) => void },
+  ctx: { fs: HermeticFS; cwd: string; env: Record<string, string>; setCwd: (p: string) => void; stdin?: string },
 ) => Promise<ShellOutput>;
+
+function resolvePath(cwd: string, p: string): string {
+  return p.startsWith("/") ? normalizePath(p) : normalizePath(joinPath(cwd, p));
+}
 
 export const builtins: Record<string, BuiltinFn> = {
   echo: async (args) => ({
@@ -49,12 +53,14 @@ export const builtins: Record<string, BuiltinFn> = {
   },
 
   cat: async (args, ctx) => {
+    // If no args but stdin available, pass through stdin
     if (args.length === 0) {
+      if (ctx.stdin) return { stdout: ctx.stdin, stderr: "", exitCode: 0 };
       return { stdout: "", stderr: "cat: missing operand\n", exitCode: 1 };
     }
     let output = "";
     for (const file of args) {
-      const resolved = file.startsWith("/") ? normalizePath(file) : normalizePath(joinPath(ctx.cwd, file));
+      const resolved = resolvePath(ctx.cwd, file);
       try {
         const content = await ctx.fs.readFile(resolved, "utf-8");
         output += content as string;
@@ -159,7 +165,7 @@ export const builtins: Record<string, BuiltinFn> = {
   },
 
   which: async (args) => {
-    const known = ["node", "npm", "npx", "git", "ls", "cat", "echo", "mkdir", "rm", "cp", "mv", "touch", "pwd", "cd", "env", "export", "which", "clear", "exit", "grep", "find"];
+    const known = ["node", "npm", "npx", "git", "ls", "cat", "echo", "mkdir", "rm", "cp", "mv", "touch", "pwd", "cd", "env", "export", "which", "clear", "exit", "grep", "sort", "head", "tail", "wc", "uniq", "find"];
     const name = args[0];
     if (name && known.includes(name)) {
       return { stdout: `/usr/bin/${name}\n`, stderr: "", exitCode: 0 };
@@ -178,4 +184,105 @@ export const builtins: Record<string, BuiltinFn> = {
     stderr: "",
     exitCode: parseInt(args[0] ?? "0", 10),
   }),
+
+  grep: async (args, ctx) => {
+    const pattern = args[0];
+    if (!pattern) return { stdout: "", stderr: "grep: missing pattern\n", exitCode: 2 };
+
+    let input: string;
+    if (args.length > 1) {
+      const path = resolvePath(ctx.cwd, args[1]);
+      input = (await ctx.fs.readFile(path, "utf-8")) as string;
+    } else if (ctx.stdin) {
+      input = ctx.stdin;
+    } else {
+      return { stdout: "", stderr: "grep: no input\n", exitCode: 2 };
+    }
+
+    const regex = new RegExp(pattern);
+    const matches = input.split("\n").filter((line) => regex.test(line));
+    return {
+      stdout: matches.join("\n") + (matches.length ? "\n" : ""),
+      stderr: "",
+      exitCode: matches.length ? 0 : 1,
+    };
+  },
+
+  sort: async (args, ctx) => {
+    const reverse = args.includes("-r");
+    const fileArgs = args.filter((a) => !a.startsWith("-"));
+    const input = fileArgs[0]
+      ? ((await ctx.fs.readFile(resolvePath(ctx.cwd, fileArgs[0]), "utf-8")) as string)
+      : ctx.stdin ?? "";
+    const lines = input.split("\n").filter(Boolean);
+    lines.sort();
+    if (reverse) lines.reverse();
+    return { stdout: lines.join("\n") + "\n", stderr: "", exitCode: 0 };
+  },
+
+  head: async (args, ctx) => {
+    let n = 10;
+    const fileArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "-n" && i + 1 < args.length) {
+        n = parseInt(args[++i]) || 10;
+      } else if (args[i].startsWith("-n")) {
+        n = parseInt(args[i].slice(2)) || 10;
+      } else if (!args[i].startsWith("-")) {
+        fileArgs.push(args[i]);
+      }
+    }
+    const input = fileArgs[0]
+      ? ((await ctx.fs.readFile(resolvePath(ctx.cwd, fileArgs[0]), "utf-8")) as string)
+      : ctx.stdin ?? "";
+    const lines = input.split("\n");
+    const result = lines.slice(0, n);
+    return { stdout: result.join("\n") + "\n", stderr: "", exitCode: 0 };
+  },
+
+  tail: async (args, ctx) => {
+    let n = 10;
+    const fileArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "-n" && i + 1 < args.length) {
+        n = parseInt(args[++i]) || 10;
+      } else if (args[i].startsWith("-n")) {
+        n = parseInt(args[i].slice(2)) || 10;
+      } else if (!args[i].startsWith("-")) {
+        fileArgs.push(args[i]);
+      }
+    }
+    const input = fileArgs[0]
+      ? ((await ctx.fs.readFile(resolvePath(ctx.cwd, fileArgs[0]), "utf-8")) as string)
+      : ctx.stdin ?? "";
+    const lines = input.split("\n").filter(Boolean);
+    const result = lines.slice(-n);
+    return { stdout: result.join("\n") + "\n", stderr: "", exitCode: 0 };
+  },
+
+  wc: async (args, ctx) => {
+    const fileArgs = args.filter((a) => !a.startsWith("-"));
+    const input = fileArgs[0]
+      ? ((await ctx.fs.readFile(resolvePath(ctx.cwd, fileArgs[0]), "utf-8")) as string)
+      : ctx.stdin ?? "";
+    const lines = input.split("\n").length - (input.endsWith("\n") ? 1 : 0);
+    const words = input.split(/\s+/).filter(Boolean).length;
+    const chars = input.length;
+    return { stdout: `  ${lines}  ${words}  ${chars}\n`, stderr: "", exitCode: 0 };
+  },
+
+  uniq: async (args, ctx) => {
+    const fileArgs = args.filter((a) => !a.startsWith("-"));
+    const input = fileArgs[0]
+      ? ((await ctx.fs.readFile(resolvePath(ctx.cwd, fileArgs[0]), "utf-8")) as string)
+      : ctx.stdin ?? "";
+    const lines = input.split("\n");
+    const result: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (i === 0 || lines[i] !== lines[i - 1]) {
+        result.push(lines[i]);
+      }
+    }
+    return { stdout: result.join("\n"), stderr: "", exitCode: 0 };
+  },
 };
