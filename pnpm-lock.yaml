@@ -92,6 +92,9 @@ importers:
       '@hermetic/core':
         specifier: workspace:*
         version: link:../core
+      '@hermetic/fs':
+        specifier: workspace:*
+        version: link:../fs
       '@hermetic/vm':
         specifier: workspace:*
         version: link:../vm

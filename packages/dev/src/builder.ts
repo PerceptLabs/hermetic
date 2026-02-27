@@ -18,12 +18,17 @@ let initialized = false;
 
 const DEFAULT_ESBUILD_CDN = "https://esm.sh/esbuild-wasm@0.21.5";
 
+async function dynamicImport(url: string): Promise<any> {
+  // Use indirect eval to avoid bundler/TS issues with dynamic CDN imports
+  // This is safer than new Function() as it only runs import()
+  return (0, eval)(`import("${url}")`);
+}
+
 async function ensureEsbuild(wasmUrl?: string): Promise<any> {
   if (initialized && esbuildModule) return esbuildModule;
-  // Dynamic import of esbuild-wasm from CDN at runtime
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  const importFn = new Function("url", "return import(url)") as (url: string) => Promise<any>;
-  esbuildModule = await importFn(DEFAULT_ESBUILD_CDN);
+
+  esbuildModule = await dynamicImport(DEFAULT_ESBUILD_CDN);
+
   await esbuildModule.initialize({
     wasmURL: wasmUrl ?? `${DEFAULT_ESBUILD_CDN}/esbuild.wasm`,
   });

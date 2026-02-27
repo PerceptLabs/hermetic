@@ -31,12 +31,56 @@ function normPath(path: string): string {
   return "/" + result.join("/");
 }
 
-async function navigateToDir(path: string): Promise<FileSystemDirectoryHandle> {
-  const parts = splitPath(normPath(path));
-  let dir = opfsRoot;
-  for (const part of parts) {
-    dir = await dir.getDirectoryHandle(part);
+// === Directory Handle Cache (LRU) ===
+
+const dirCache = new Map<string, { handle: FileSystemDirectoryHandle; ts: number }>();
+const DIR_CACHE_MAX = 200;
+const DIR_CACHE_TTL = 60_000; // 1 minute
+
+function invalidateCache(path: string): void {
+  const normalized = normPath(path);
+  for (const key of dirCache.keys()) {
+    if (key.startsWith(normalized) || normalized.startsWith(key)) {
+      dirCache.delete(key);
+    }
   }
+}
+
+async function navigateToDir(path: string): Promise<FileSystemDirectoryHandle> {
+  const normalized = normPath(path);
+  const parts = splitPath(normalized);
+
+  // Check cache
+  const cached = dirCache.get(normalized);
+  if (cached && Date.now() - cached.ts < DIR_CACHE_TTL) {
+    return cached.handle;
+  }
+
+  // Navigate from closest cached ancestor
+  let dir = opfsRoot;
+  let resolvedPath = "";
+
+  for (let i = 0; i < parts.length; i++) {
+    resolvedPath += "/" + parts[i];
+    const ancestor = dirCache.get(resolvedPath);
+    if (ancestor && Date.now() - ancestor.ts < DIR_CACHE_TTL) {
+      dir = ancestor.handle;
+      continue;
+    }
+    dir = await dir.getDirectoryHandle(parts[i]);
+    // Cache this handle
+    if (dirCache.size >= DIR_CACHE_MAX) {
+      // Evict oldest
+      let oldestKey = "";
+      let oldestTs = Infinity;
+      for (const [key, val] of dirCache) {
+        if (val.ts < oldestTs) { oldestTs = val.ts; oldestKey = key; }
+      }
+      dirCache.delete(oldestKey);
+    }
+    dirCache.set(resolvedPath, { handle: dir, ts: Date.now() });
+  }
+
   return dir;
 }
 
@@ -76,6 +120,25 @@ async function openReadOnly(fileHandle: FileSystemFileHandle): Promise<FileSyste
   return await fileHandle.createSyncAccessHandle();
 }
 
+// === ArrayBuffer Pool for Small Reads ===
+
+const bufferPool: ArrayBuffer[] = [];
+const POOL_SIZE = 32;
+const POOL_BUFFER_SIZE = 4096; // 4KB
+
+function getPooledBuffer(size: number): ArrayBuffer {
+  if (size <= POOL_BUFFER_SIZE && bufferPool.length > 0) {
+    return bufferPool.pop()!;
+  }
+  return new ArrayBuffer(Math.max(size, POOL_BUFFER_SIZE));
+}
+
+function returnToPool(buffer: ArrayBuffer): void {
+  if (buffer.byteLength <= POOL_BUFFER_SIZE && bufferPool.length < POOL_SIZE) {
+    bufferPool.push(buffer);
+  }
+}
+
 // === FS Operations ===
 
 async function readFile(path: string): Promise<ArrayBuffer> {
@@ -92,6 +155,7 @@ async function readFile(path: string): Promise<ArrayBuffer> {
 }
 
 async function writeFile(path: string, data: ArrayBuffer, options?: { recursive?: boolean }): Promise<void> {
+  invalidateCache(path);
   if (options?.recursive) {
     const parts = splitPath(normPath(path));
     parts.pop(); // remove filename
@@ -184,6 +248,7 @@ async function stat(path: string): Promise<{
 }
 
 async function unlink(path: string): Promise<void> {
+  invalidateCache(path);
   const parts = splitPath(normPath(path));
   const name = parts.pop()!;
   let dir = opfsRoot;
@@ -194,6 +259,7 @@ async function unlink(path: string): Promise<void> {
 }
 
 async function rmdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+  invalidateCache(path);
   const parts = splitPath(normPath(path));
   const name = parts.pop()!;
   let dir = opfsRoot;
@@ -204,6 +270,8 @@ async function rmdir(path: string, options?: { recursive?: boolean }): Promise<v
 }
 
 async function rename(oldPath: string, newPath: string): Promise<void> {
+  invalidateCache(oldPath);
+  invalidateCache(newPath);
   // OPFS doesn't have native rename across directories
   // For files: read, write to new location, delete old
   const oldStat = await stat(oldPath);

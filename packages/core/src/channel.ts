@@ -72,6 +72,16 @@ export class HermeticChannel implements Disposable {
     });
   }
 
+  /**
+   * Execute multiple calls in parallel, returning results in order.
+   * Much faster than sequential calls due to reduced round-trip overhead.
+   */
+  async batch<T>(calls: Array<{ ns: string; method: string; args: unknown[] }>): Promise<T[]> {
+    return Promise.all(
+      calls.map((c) => this.call(c.ns, c.method, c.args) as Promise<T>),
+    );
+  }
+
   // --- Handler side: register methods that respond to requests ---
 
   handle(ns: string, methods: Record<string, (...args: unknown[]) => Promise<unknown>>): void {
