@@ -13,22 +13,33 @@ export type {
 } from "./types.js";
 
 export { MemoryFS } from "./backends/memory.js";
+export { OPFSFS } from "./backends/opfs.js";
+export { createWatcher, hasFileSystemObserver } from "./watch.js";
 
 import type { HermeticFS, FSOptions } from "./types.js";
 import { MemoryFS } from "./backends/memory.js";
+import { OPFSFS } from "./backends/opfs.js";
+
+function supportsOPFS(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    "storage" in navigator &&
+    "getDirectory" in navigator.storage
+  );
+}
 
 /**
  * Create a HermeticFS instance.
- * For Step 2 (memory backend only), always returns MemoryFS.
- * OPFS and IndexedDB backends will be added in Step 3.
+ * Auto-selects OPFS in browser, memory in Node/test.
  */
-export function createFS(options: FSOptions = {}): HermeticFS {
-  const backend = options.backend ?? "memory";
+export async function createFS(options: FSOptions = {}): Promise<HermeticFS> {
+  const backend = options.backend ?? (supportsOPFS() ? "opfs" : "memory");
   switch (backend) {
     case "memory":
       return new MemoryFS();
     case "opfs":
+      return OPFSFS.create();
     case "indexeddb":
-      throw new Error(`Backend "${backend}" not yet implemented. Use "memory" for now.`);
+      throw new Error('IndexedDB backend not yet implemented. Use "memory" or "opfs".');
   }
 }
