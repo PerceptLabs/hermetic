@@ -1,13 +1,25 @@
 # @hermetic/vm
 
-Isolated JavaScript execution via Web Workers.
+Capability-based sandbox VM with a binding system for exposing host APIs to isolated code.
+
+## Install
+
+```bash
+npm install @hermetic/vm
+```
 
 ## Usage
 
 ```ts
 import { createVM } from "@hermetic/vm";
+
+const vm = createVM();
+vm.register("log", { invoke: (msg) => console.log("[sandbox]", msg) });
 ```
 
-## License
+## API
 
-MIT
+| Export | Description |
+|--------|-------------|
+| `HermeticVM` | Capability-based VM class |
+| `createVM()` | Factory function |
