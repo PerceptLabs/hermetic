@@ -294,4 +294,32 @@ export const builtins: Record<string, BuiltinFn> = {
     }
     return { stdout: result.join("\n"), stderr: "", exitCode: 0 };
   },
+
+  find: async (args, ctx) => {
+    const targets = args.filter((a) => !a.startsWith("-"));
+    const dir = targets[0] ? resolvePath(ctx.cwd, targets[0]) : ctx.cwd;
+    const nameIdx = args.indexOf("-name");
+    const namePattern = nameIdx >= 0 && args[nameIdx + 1] ? args[nameIdx + 1] : null;
+
+    const results: string[] = [dir];
+    async function walk(path: string): Promise<void> {
+      try {
+        const entries = await ctx.fs.readdir(path);
+        for (const entry of entries) {
+          const full = joinPath(path, entry);
+          if (!namePattern || new RegExp("^" + namePattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$").test(entry)) {
+            results.push(full);
+          }
+          try {
+            const stat = await ctx.fs.stat(full);
+            if (stat.type === "directory") {
+              await walk(full);
+            }
+          } catch { /* skip */ }
+        }
+      } catch { /* dir not readable */ }
+    }
+    await walk(dir);
+    return { stdout: results.join("\n") + "\n", stderr: "", exitCode: 0 };
+  },
 };
