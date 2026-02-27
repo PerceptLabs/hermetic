@@ -58,13 +58,65 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/pm: {}
+  packages/pm:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hermetic/fs':
+        specifier: workspace:*
+        version: link:../fs
 
-  packages/proc: {}
+  packages/proc:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hermetic/vm':
+        specifier: workspace:*
+        version: link:../vm
 
-  packages/runtime: {}
+  packages/runtime:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hermetic/dev':
+        specifier: workspace:*
+        version: link:../dev
+      '@hermetic/fs':
+        specifier: workspace:*
+        version: link:../fs
+      '@hermetic/net':
+        specifier: workspace:*
+        version: link:../net
+      '@hermetic/pm':
+        specifier: workspace:*
+        version: link:../pm
+      '@hermetic/proc':
+        specifier: workspace:*
+        version: link:../proc
+      '@hermetic/shell':
+        specifier: workspace:*
+        version: link:../shell
+      '@hermetic/vm':
+        specifier: workspace:*
+        version: link:../vm
 
-  packages/shell: {}
+  packages/shell:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hermetic/fs':
+        specifier: workspace:*
+        version: link:../fs
+      '@hermetic/pm':
+        specifier: workspace:*
+        version: link:../pm
+      '@hermetic/proc':
+        specifier: workspace:*
+        version: link:../proc
 
   packages/vm:
     dependencies:
