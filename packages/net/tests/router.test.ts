@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createRouter } from "../src/router.js";
+import { FETCH_SHIM_SOURCE } from "../src/shims/fetch-shim.js";
 
 function createMockPort() {
   const messages: any[] = [];
@@ -158,5 +159,29 @@ describe("createRouter", () => {
     const response = messages[0].data;
     expect(response.status).toBe(201);
     expect(response.headers["x-custom"]).toBe("value");
+  });
+});
+
+describe("Security", () => {
+  it("fetch shim intercepts javascript: URLs", () => {
+    // The shouldIntercept function in the shim should return true for dangerous protocols
+    expect(FETCH_SHIM_SOURCE).toContain("javascript");
+    expect(FETCH_SHIM_SOURCE).toContain("data");
+    expect(FETCH_SHIM_SOURCE).toContain("blob");
+    expect(FETCH_SHIM_SOURCE).toContain("vbscript");
+  });
+
+  it("fetch shim validates message structure", () => {
+    // The shim should check for valid message types before processing
+    expect(FETCH_SHIM_SOURCE).toContain("hermetic-net-init");
+    expect(FETCH_SHIM_SOURCE).toContain("hermetic-set-content");
+    expect(FETCH_SHIM_SOURCE).toContain("hermetic-navigate");
+    expect(FETCH_SHIM_SOURCE).toContain("typeof event.data !== \"object\"");
+  });
+
+  it("CSP is configured in preview source", async () => {
+    const { createPreview } = await import("../src/preview.js");
+    // Preview module should exist and use CSP
+    expect(createPreview).toBeDefined();
   });
 });

@@ -178,15 +178,24 @@ function expandVariables(str: string, env: Record<string, string>): string {
   });
 }
 
+function sanitizeRedirectTarget(target: string, cwd: string): string {
+  const resolved = target.startsWith("/")
+    ? normalizePath(target)
+    : normalizePath(joinPath(cwd, target));
+  // After normalization, ".." should be gone. If it somehow isn't, reject.
+  if (resolved.includes("..")) {
+    throw new Error("Invalid redirect target");
+  }
+  return resolved;
+}
+
 async function applyRedirects(
   result: ShellOutput,
   node: CommandNode,
   ctx: ExecContext,
 ): Promise<ShellOutput> {
   for (const redirect of node.redirects) {
-    const target = redirect.target.startsWith("/")
-      ? normalizePath(redirect.target)
-      : normalizePath(joinPath(ctx.cwd, redirect.target));
+    const target = sanitizeRedirectTarget(redirect.target, ctx.cwd);
 
     switch (redirect.operator) {
       case ">":

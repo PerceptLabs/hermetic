@@ -10,9 +10,13 @@ export const FETCH_SHIM_SOURCE = `
   let __hermeticPort = null;
   const __pendingRequests = new Map();
 
-  // Listen for port transfer from host
+  // Listen for port transfer from host — validate message structure
   window.addEventListener("message", function(event) {
-    if (event.data && event.data.type === "hermetic-net-init" && event.ports.length > 0) {
+    if (!event.data || typeof event.data !== "object") return;
+    var validTypes = ["hermetic-net-init", "hermetic-set-content", "hermetic-navigate"];
+    if (validTypes.indexOf(event.data.type) === -1) return;
+
+    if (event.data.type === "hermetic-net-init" && event.ports.length > 0) {
       __hermeticPort = event.ports[0];
       __hermeticPort.onmessage = function(e) {
         const msg = e.data;
@@ -62,6 +66,10 @@ export const FETCH_SHIM_SOURCE = `
 
   // Check if a URL should be intercepted (relative/localhost) or passed through
   function shouldIntercept(url) {
+    // Always block dangerous protocols
+    if (/^(javascript|data|blob|vbscript):/i.test(url)) {
+      return true; // intercept = route to handler, not real fetch
+    }
     try {
       var parsed = new URL(url, "http://localhost");
       return parsed.hostname === "localhost" ||
