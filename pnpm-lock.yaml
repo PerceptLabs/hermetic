@@ -42,7 +42,11 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/net: {}
+  packages/net:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/pm: {}
 
