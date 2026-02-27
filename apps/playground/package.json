@@ -10,6 +10,7 @@
   "dependencies": {
     "@hermetic/runtime": "workspace:*",
     "@hermetic/fs": "workspace:*",
+    "@hermetic/net": "workspace:*",
     "@hermetic/shell": "workspace:*",
     "@hermetic/dev": "workspace:*"
   },

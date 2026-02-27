@@ -38,6 +38,9 @@ importers:
       '@hermetic/fs':
         specifier: workspace:*
         version: link:../../packages/fs
+      '@hermetic/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@hermetic/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime

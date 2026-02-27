@@ -4,11 +4,13 @@
 
 import { MemoryFS } from "@hermetic/fs";
 import { HermeticShell } from "@hermetic/shell";
+import { createPreview, type PreviewHandle } from "@hermetic/net";
 
 // === State ===
 
 let fs: MemoryFS;
 let shell: HermeticShell;
+let previewHandle: PreviewHandle | null = null;
 let currentFile = "/index.js";
 const commandHistory: string[] = [];
 let historyIndex = -1;
@@ -91,7 +93,7 @@ export function multiply(a, b) {
   await refreshFileTree();
   terminalPrint("Welcome to Hermetic Playground!", "stdout");
   terminalPrint('Type "help" for available commands.\n', "stdout");
-  updatePreview();
+  await updatePreview();
 }
 
 // === File Tree ===
@@ -192,7 +194,7 @@ async function executeCommand(input: string) {
 
   if (trimmed === "run") {
     await saveCurrentFile();
-    updatePreview();
+    await updatePreview();
     terminalPrint("Preview updated.\n", "stdout");
     return;
   }
@@ -221,16 +223,42 @@ async function executeCommand(input: string) {
 
 // === Preview ===
 
-function updatePreview() {
+async function updatePreview() {
+  const html = await buildPreviewContent();
+
+  if (previewHandle) {
+    // Reuse existing preview — just update content
+    previewHandle.setContent(html);
+    return;
+  }
+
+  // Create sandboxed preview with MessageChannel routing
   previewContainer.innerHTML = "";
-
-  const iframe = document.createElement("iframe");
-  iframe.sandbox.add("allow-scripts");
-  previewContainer.appendChild(iframe);
-
-  // Build preview HTML from virtual FS
-  buildPreviewContent().then((html) => {
-    iframe.srcdoc = html;
+  previewHandle = await createPreview({
+    container: previewContainer,
+    html,
+    handler: async (request: Request) => {
+      // Serve files from the virtual FS
+      const url = new URL(request.url);
+      const path = url.pathname;
+      try {
+        const content = await fs.readFile(path, "utf-8");
+        const ext = path.split(".").pop() ?? "";
+        const mimeMap: Record<string, string> = {
+          js: "application/javascript",
+          ts: "application/javascript",
+          html: "text/html",
+          css: "text/css",
+          json: "application/json",
+          svg: "image/svg+xml",
+        };
+        return new Response(content as BodyInit, {
+          headers: { "content-type": mimeMap[ext] ?? "text/plain" },
+        });
+      } catch {
+        return new Response("Not Found", { status: 404 });
+      }
+    },
   });
 }
 
@@ -350,7 +378,7 @@ editor.addEventListener("keydown", (e) => {
 // Toolbar buttons
 btnRun.addEventListener("click", async () => {
   await saveCurrentFile();
-  updatePreview();
+  await updatePreview();
   terminalPrint("Preview updated.\n", "stdout");
 });
 
