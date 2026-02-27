@@ -36,7 +36,11 @@ importers:
 
   packages/dev: {}
 
-  packages/fs: {}
+  packages/fs:
+    dependencies:
+      '@hermetic/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/net: {}
 

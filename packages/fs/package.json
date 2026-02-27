@@ -19,5 +19,8 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "dependencies": {
+    "@hermetic/core": "workspace:*"
+  }
 }
