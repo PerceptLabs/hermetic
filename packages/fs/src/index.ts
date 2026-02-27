@@ -15,7 +15,7 @@ export type {
 export { MemoryFS } from "./backends/memory.js";
 export { OPFSFS } from "./backends/opfs.js";
 export { IndexedDBFS } from "./backends/indexeddb.js";
-export { createWatcher, hasFileSystemObserver } from "./watch.js";
+export { createWatcher, createNativeWatcher, createDebouncedWatcher, hasFileSystemObserver } from "./watch.js";
 
 import type { HermeticFS, FSOptions } from "./types.js";
 import { MemoryFS } from "./backends/memory.js";

@@ -10,7 +10,70 @@ export function hasFileSystemObserver(): boolean {
 }
 
 /**
- * Create a file watcher using the best available mechanism.
+ * Create a native FileSystemObserver watcher.
+ * Returns null if FileSystemObserver is not available.
+ */
+export function createNativeWatcher(
+  dirHandle: FileSystemDirectoryHandle,
+  callback: WatchCallback,
+): { stop: () => void } | null {
+  if (!hasFileSystemObserver()) return null;
+
+  try {
+    // @ts-expect-error — FileSystemObserver is not yet in TS lib types
+    const observer = new FileSystemObserver(async (records: any[]) => {
+      for (const record of records) {
+        const path = record.relativePathComponents.join("/");
+        const type: WatchEventType =
+          record.type === "appeared"
+            ? "create"
+            : record.type === "disappeared"
+              ? "delete"
+              : "modify";
+        callback({ type, path: "/" + path });
+      }
+    });
+
+    observer.observe(dirHandle, { recursive: true });
+    return {
+      stop: () => observer.disconnect(),
+    };
+  } catch {
+    return null; // Fall back to polling
+  }
+}
+
+/**
+ * Create a debounced watcher that batches rapid changes.
+ * Deduplicates events per path, keeping only the latest event type.
+ */
+export function createDebouncedWatcher(
+  subscribe: (cb: WatchCallback) => () => void,
+  callback: WatchCallback,
+  debounceMs = 100,
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: WatchEvent[] = [];
+
+  const flush = () => {
+    const events = pending;
+    pending = [];
+    timer = null;
+    // Deduplicate: only fire latest event per path
+    const latest = new Map<string, WatchEvent>();
+    for (const e of events) latest.set(e.path, e);
+    for (const event of latest.values()) callback(event);
+  };
+
+  return subscribe((event) => {
+    pending.push(event);
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, debounceMs);
+  });
+}
+
+/**
+ * Create a file watcher using polling.
  * Returns an unsubscribe function.
  */
 export function createWatcher(

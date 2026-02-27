@@ -5,6 +5,7 @@
 
 import { HermeticChannel } from "@hermetic/core";
 import type { HermeticFS, FileStat, WriteOptions, MkdirOptions, RmdirOptions, WatchCallback, WatchEvent } from "../types.js";
+import { createNativeWatcher } from "../watch.js";
 
 // The OPFS worker source is bundled as a string at build time
 // via tsup's `define` or a virtual module. For now, we import it
@@ -18,6 +19,7 @@ export class OPFSFS implements HermeticFS {
   private watchers = new Map<string, Set<WatchCallback>>();
   private watchInterval?: ReturnType<typeof setInterval>;
   private lastSnapshot = new Map<string, string>(); // path -> mtime for polling
+  private nativeWatcher?: { stop: () => void };
 
   constructor(worker: Worker, channel: HermeticChannel) {
     this.worker = worker;
@@ -135,19 +137,50 @@ export class OPFSFS implements HermeticFS {
     if (!this.watchers.has(path)) this.watchers.set(path, new Set());
     this.watchers.get(path)!.add(callback);
 
-    // Start polling if not already
-    if (!this.watchInterval) {
-      this.watchInterval = setInterval(() => this.pollChanges(), 500);
+    // Try native FileSystemObserver first, then fall back to polling
+    if (!this.nativeWatcher && !this.watchInterval) {
+      this.initWatching();
     }
 
     return () => {
       this.watchers.get(path)?.delete(callback);
       if (this.watchers.get(path)?.size === 0) this.watchers.delete(path);
-      if (this.watchers.size === 0 && this.watchInterval) {
-        clearInterval(this.watchInterval);
-        this.watchInterval = undefined;
+      if (this.watchers.size === 0) {
+        if (this.watchInterval) {
+          clearInterval(this.watchInterval);
+          this.watchInterval = undefined;
+        }
+        if (this.nativeWatcher) {
+          this.nativeWatcher.stop();
+          this.nativeWatcher = undefined;
+        }
       }
     };
+  }
+
+  private initWatching(): void {
+    // Try FileSystemObserver (Chrome 129+)
+    if (typeof navigator !== "undefined" && "storage" in navigator) {
+      navigator.storage.getDirectory().then((root) => {
+        this.nativeWatcher = createNativeWatcher(root, (event) => {
+          // Forward to registered watchers
+          this.watchers.get(event.path)?.forEach((cb) => cb(event));
+          // Also notify wildcard watchers (watching "/")
+          this.watchers.get("/")?.forEach((cb) => cb(event));
+        }) ?? undefined;
+
+        if (!this.nativeWatcher) {
+          // Polling fallback
+          this.watchInterval = setInterval(() => this.pollChanges(), 500);
+        }
+      }).catch(() => {
+        // Polling fallback
+        this.watchInterval = setInterval(() => this.pollChanges(), 500);
+      });
+    } else {
+      // Polling fallback
+      this.watchInterval = setInterval(() => this.pollChanges(), 500);
+    }
   }
 
   private async pollChanges(): Promise<void> {
@@ -172,6 +205,7 @@ export class OPFSFS implements HermeticFS {
 
   dispose(): void {
     if (this.watchInterval) clearInterval(this.watchInterval);
+    if (this.nativeWatcher) this.nativeWatcher.stop();
     this.channel.dispose();
     this.worker.terminate();
     this.watchers.clear();
