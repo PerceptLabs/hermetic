@@ -18,6 +18,8 @@ export interface SpawnOptions {
   env?: Record<string, string>;
   /** Stdin data or stream */
   stdin?: ReadableStream<Uint8Array> | Uint8Array | string;
+  /** Execution timeout in ms (default 30000) */
+  timeout?: number;
 }
 
 export interface ProcessHandle extends Disposable {

@@ -6,6 +6,10 @@ import type { ShellNode, CommandNode, PipelineNode, ListNode, ShellOutput } from
 import { builtins } from "./builtins.js";
 import { expandGlob } from "./glob.js";
 
+function resolvePath(cwd: string, p: string): string {
+  return p.startsWith("/") ? normalizePath(p) : normalizePath(joinPath(cwd, p));
+}
+
 export interface ExecContext {
   fs: HermeticFS;
   cwd: string;
@@ -61,6 +65,35 @@ async function executeCommand(node: CommandNode, ctx: ExecContext): Promise<Shel
   if (name in builtins) {
     const result = await builtins[name](args, ctx);
     return applyRedirects(result, node, ctx);
+  }
+
+  // node command — read script from FS and eval inline with captured console
+  if (name === "node" && args.length > 0) {
+    const scriptPath = resolvePath(ctx.cwd, args[0]);
+    try {
+      const code = (await ctx.fs.readFile(scriptPath, "utf-8")) as string;
+      const output: string[] = [];
+      const errors: string[] = [];
+      const fakeConsole = {
+        log: (...a: unknown[]) => output.push(a.map(String).join(" ")),
+        error: (...a: unknown[]) => errors.push(a.map(String).join(" ")),
+        warn: (...a: unknown[]) => errors.push(a.map(String).join(" ")),
+        info: (...a: unknown[]) => output.push(a.map(String).join(" ")),
+      };
+      const fn = new Function("console", "process", code);
+      fn(fakeConsole, { env: ctx.env, argv: ["node", args[0]], exit: () => {} });
+      return applyRedirects(
+        {
+          stdout: output.join("\n") + (output.length ? "\n" : ""),
+          stderr: errors.join("\n") + (errors.length ? "\n" : ""),
+          exitCode: 0,
+        },
+        node,
+        ctx,
+      );
+    } catch (err: any) {
+      return { stdout: "", stderr: `${err.message}\n`, exitCode: 1 };
+    }
   }
 
   // Unknown command

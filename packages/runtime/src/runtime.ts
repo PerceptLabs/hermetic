@@ -51,7 +51,7 @@ export class Hermetic {
     const fs = await createFS(options.fs);
     const vm = createVM();
     const pm = createPM({ fs });
-    const proc = createProc();
+    const proc = createProc(fs);
     const shell = createShell(fs, { cwd: options.cwd, env: options.env });
 
     return new Hermetic(fs, vm, pm, proc, shell);

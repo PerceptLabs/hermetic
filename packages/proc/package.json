@@ -22,6 +22,7 @@
   ],
   "dependencies": {
     "@hermetic/core": "workspace:*",
+    "@hermetic/fs": "workspace:*",
     "@hermetic/vm": "workspace:*"
   },
   "license": "MIT"

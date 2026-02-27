@@ -129,4 +129,30 @@ describe("Shell Builtins", () => {
     const result = await shell.exec("echo $NAME");
     expect(result.stdout).toBe("World\n");
   });
+
+  it("node executes script from FS", async () => {
+    await fs.writeFile("/script.js", 'console.log("hello from node")');
+    const result = await shell.exec("node /script.js");
+    expect(result.stdout.trim()).toBe("hello from node");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("node captures errors in stderr", async () => {
+    await fs.writeFile("/bad.js", 'console.error("oops")');
+    const result = await shell.exec("node /bad.js");
+    expect(result.stderr.trim()).toBe("oops");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("node returns exit code 1 on throw", async () => {
+    await fs.writeFile("/throw.js", 'throw new Error("boom")');
+    const result = await shell.exec("node /throw.js");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("boom");
+  });
+
+  it("node returns 1 for missing script", async () => {
+    const result = await shell.exec("node /missing.js");
+    expect(result.exitCode).toBe(1);
+  });
 });
